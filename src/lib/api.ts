@@ -4,8 +4,16 @@ export const TOKEN_KEY = 'll_admin_token';
 export const REFRESH_KEY = 'll_admin_refresh';
 export const ADMIN_KEY = 'll_admin_user';
 
+// Hosted backend by default; falls back to the Vite dev proxy when unset.
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+const ASSET_HOST = API_BASE.replace(/\/api\/v1$/, '');
+
+/** Builds an absolute URL for a backend asset path (e.g. `/uploads/x.jpg`). */
+export const assetUrl = (p?: string | null): string | undefined =>
+  !p ? undefined : p.startsWith('http') ? p : `${ASSET_HOST}${p}`;
+
 export const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -29,7 +37,7 @@ async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return null;
   refreshPromise ??= axios
-    .post('/api/v1/auth/refresh', { refreshToken })
+    .post(`${API_BASE}/auth/refresh`, { refreshToken })
     .then((res) => {
       const newToken = (res.data as { data?: { accessToken?: string } })?.data?.accessToken ?? null;
       if (newToken) localStorage.setItem(TOKEN_KEY, newToken);

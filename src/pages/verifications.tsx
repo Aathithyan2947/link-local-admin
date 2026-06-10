@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
-import { api, type ApiResponse, type PaginationMeta } from '@/lib/api';
+import { api, assetUrl, type ApiResponse, type PaginationMeta } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Badge } from '@/components/ui/card';
@@ -80,7 +80,7 @@ function ProfilesTab() {
       header: 'Proof',
       cell: (r) =>
         r.docUrl ? (
-          <a href={r.docUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">
+          <a href={assetUrl(r.docUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">
             View <ExternalLink className="h-3 w-3" />
           </a>
         ) : (

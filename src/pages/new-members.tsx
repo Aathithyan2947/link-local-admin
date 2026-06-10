@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, type ApiResponse } from '@/lib/api';
+import { api, assetUrl, type ApiResponse } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Card, Spinner, Badge } from '@/components/ui/card';
@@ -39,7 +39,7 @@ export function NewMembersPage() {
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-lg font-bold text-brand-600">
                   {m.photoUrl ? (
-                    <img src={m.photoUrl} alt={m.name} className="h-12 w-12 rounded-full object-cover" />
+                    <img src={assetUrl(m.photoUrl)} alt={m.name} className="h-12 w-12 rounded-full object-cover" />
                   ) : (
                     m.name.slice(0, 1).toUpperCase()
                   )}
