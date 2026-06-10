@@ -143,7 +143,7 @@ function DocsTab() {
     {
       header: 'Proof',
       cell: (r) => (
-        <a href={r.docUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">
+        <a href={assetUrl(r.docUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">
           View <ExternalLink className="h-3 w-3" />
         </a>
       ),
