@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
-import { api, type ApiResponse, type PaginationMeta } from '@/lib/api';
+import { Search, Tag } from 'lucide-react';
+import { api, apiError, type ApiResponse, type PaginationMeta } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
-import { Badge } from '@/components/ui/card';
+import { Badge, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 import { DataTable, type Column } from '@/components/ui/data-table';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Any = Record<string, any>;
 
 interface MemberRow {
   id: number;
@@ -28,7 +32,11 @@ export function MembersPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
-  const [userType, setUserType] = useState('');
+  // Pre-filter from the URL (e.g. dashboard "Residents" card → /members?userType=resident).
+  const [userType, setUserType] = useState(
+    () => new URLSearchParams(window.location.search).get('userType') ?? '',
+  );
+  const [tagsFor, setTagsFor] = useState<MemberRow | null>(null);
 
   const { data, isFetching } = useQuery({
     queryKey: ['members', page, q, userType],
@@ -106,6 +114,9 @@ export function MembersPage() {
           >
             {r.isBlocked ? 'Unblock' : 'Block'}
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setTagsFor(r)} title="Assign profile tags">
+            <Tag className="h-4 w-4" />
+          </Button>
         </div>
       ),
     },
@@ -150,6 +161,59 @@ export function MembersPage() {
         rowKey={(r) => r.id}
         emptyMessage="No members found"
       />
+
+      {tagsFor && <MemberTagsModal member={tagsFor} onClose={() => setTagsFor(null)} />}
     </div>
+  );
+}
+
+// ── Assign profile tags to a member ──────────────────────────
+function MemberTagsModal({ member, onClose }: { member: MemberRow; onClose: () => void }) {
+  const allTags = useQuery({
+    queryKey: ['m-profile-tags'],
+    queryFn: () => api.get<ApiResponse<Any[]>>('/masters/profile-tags', { params: { pageSize: 100 } }).then((r) => r.data.data),
+  });
+  const current = useQuery({
+    queryKey: ['member-tags', member.id],
+    queryFn: () => api.get<ApiResponse<{ tagIds: number[] }>>(`/admin/members/${member.id}/tags`).then((r) => r.data.data.tagIds),
+  });
+
+  const [selected, setSelected] = useState<Set<number> | null>(null);
+  const chosen = selected ?? new Set(current.data ?? []);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => api.put(`/admin/members/${member.id}/tags`, { tagIds: Array.from(chosen) }),
+    onSuccess: onClose,
+    onError: (e) => setErr(apiError(e)),
+  });
+
+  const toggle = (id: number) => {
+    const next = new Set(chosen);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSelected(next);
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Tags — ${member.profile?.name ?? 'Member'}`}>
+      {allTags.isLoading || current.isLoading ? <Spinner /> : (
+        <div className="space-y-2">
+          {(allTags.data ?? []).length === 0 && (
+            <p className="text-sm text-gray-400">No tags defined yet. Create them in Masters → Profile Tags.</p>
+          )}
+          {(allTags.data ?? []).map((t) => (
+            <label key={t.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-50">
+              <input type="checkbox" checked={chosen.has(t.id)} onChange={() => toggle(t.id)} className="h-4 w-4 rounded border-gray-300 text-brand-500" />
+              {t.tagName}
+            </label>
+          ))}
+        </div>
+      )}
+      {err && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">{err}</div>}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button onClick={() => save.mutate()} loading={save.isPending}>Save tags</Button>
+      </div>
+    </Modal>
   );
 }

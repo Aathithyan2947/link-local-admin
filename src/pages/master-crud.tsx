@@ -127,7 +127,9 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
     const payload: Row = {};
     for (const f of config.fields) {
       const raw = form[f.name];
-      if (raw === undefined || raw === '') {
+      // Treat null (a NULL value loaded from the DB into the edit form) like empty, so we
+      // never PATCH `null` — the backend's z.string().optional() accepts undefined, not null.
+      if (raw === undefined || raw === '' || raw === null) {
         if (f.type === 'checkbox') payload[f.name] = false;
         continue;
       }

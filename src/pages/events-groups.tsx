@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { api, type ApiResponse, type PaginationMeta } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatDateTime } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/card';
 import { DataTable, type Column } from '@/components/ui/data-table';
 
@@ -98,17 +99,56 @@ export function GroupsPage() {
 }
 
 export function ActivityLogsPage() {
+  const [page, setPage] = useState(1);
+  const [q, setQ] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['admin-logs', page, q, from, to],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<Row[]> & { meta: PaginationMeta }>('/admin/activity-logs', {
+          params: { page, pageSize: 10, q: q || undefined, from: from || undefined, to: to || undefined },
+        })
+      ).data,
+    placeholderData: keepPreviousData,
+  });
+
+  const reset = () => { setPage(1); setQ(''); setFrom(''); setTo(''); };
+
+  const columns: Column<Row>[] = [
+    { header: 'When', cell: (r) => formatDateTime(r.performedAt) },
+    { header: 'Admin', cell: (r) => r.admin?.name ?? '—' },
+    { header: 'Action', cell: (r) => <span className="font-mono text-xs">{r.action}</span> },
+    { header: 'Entity', cell: (r) => [r.entityType, r.entityId].filter(Boolean).join(' #') || '—' },
+  ];
+
   return (
-    <ListPage
-      title="Activity Logs"
-      endpoint="/admin/activity-logs"
-      queryKey="admin-logs"
-      columns={[
-        { header: 'Admin', cell: (r) => r.admin?.name ?? '—' },
-        { header: 'Action', cell: (r) => <span className="font-mono text-xs">{r.action}</span> },
-        { header: 'Entity', cell: (r) => [r.entityType, r.entityId].filter(Boolean).join(' #') || '—' },
-        { header: 'When', cell: (r) => formatDate(r.performedAt) },
-      ]}
-    />
+    <div>
+      <PageHeader breadcrumb="Admin" title="Activity Logs" subtitle="Every admin action, newest first." />
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="relative min-w-56 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search action, admin, entity..." className="pl-10" />
+        </div>
+        <label className="text-sm text-gray-500">From
+          <Input type="date" value={from} onChange={(e) => { setPage(1); setFrom(e.target.value); }} className="mt-1 block" />
+        </label>
+        <label className="text-sm text-gray-500">To
+          <Input type="date" value={to} onChange={(e) => { setPage(1); setTo(e.target.value); }} className="mt-1 block" />
+        </label>
+        {(q || from || to) && <Button variant="outline" onClick={reset}>Clear</Button>}
+      </div>
+      <DataTable
+        columns={columns}
+        rows={data?.data ?? []}
+        meta={data?.meta}
+        loading={isFetching && !data}
+        onPageChange={setPage}
+        rowKey={(r) => r.id}
+        emptyMessage="No activity in this range"
+      />
+    </div>
   );
 }

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, Upload, SlidersHorizontal, ArrowUp, ArrowDown, Trash2, Plus } from 'lucide-react';
+import { Search, Upload, SlidersHorizontal, ArrowUp, ArrowDown, Trash2, Plus, Check, X, Pencil } from 'lucide-react';
 import { api, apiError, type ApiResponse, type PaginationMeta } from '@/lib/api';
-import { cn, formatDateTime } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Badge, Card, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Field } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 import { DataTable, type Column } from '@/components/ui/data-table';
 
 export function AddressesPage() {
@@ -15,11 +16,11 @@ export function AddressesPage() {
     <div>
       <PageHeader
         breadcrumb="Admin › Masters & Controls"
-        title="Address Capture"
-        subtitle="Manage all addresses and the per-city address form"
+        title="Address Master"
+        subtitle="Curated directory of complexes & localities — the source of truth for the app's search autocomplete & 2 km nearby autofill. Residents' flat / plot numbers are never stored here."
       />
       <div className="mb-5 inline-flex rounded-xl bg-gray-100 p-1">
-        {([['list', 'Addresses'], ['format', 'Form Format']] as const).map(([k, label]) => (
+        {([['list', 'Localities'], ['format', 'Form Format']] as const).map(([k, label]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -32,46 +33,105 @@ export function AddressesPage() {
           </button>
         ))}
       </div>
-      {tab === 'list' ? <AddressList /> : <FormFormatEditor />}
+      {tab === 'list' ? <MasterList /> : <FormFormatEditor />}
     </div>
   );
 }
 
-// ── Addresses tab ────────────────────────────────────────────
-interface AddressRow {
+// ── Localities (Address Master) tab ──────────────────────────
+interface MasterRow {
   id: number;
-  userName: string;
-  mobile: string | null;
-  fullAddress: string;
+  complex: string | null;
+  lane1: string | null;
+  lane2: string | null;
+  area: string | null;
+  suburb: string | null;
   pincode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: 'pending' | 'approved' | 'rejected';
+  source: string;
   city: string;
-  isActive: boolean;
+  state: string | null;
   createdAt: string;
 }
 
-function AddressList() {
+type MasterForm = {
+  id?: number;
+  cityId?: number;
+  complex?: string;
+  lane1?: string;
+  lane2?: string;
+  area?: string;
+  suburb?: string;
+  pincode?: string;
+  latitude?: string;
+  longitude?: string;
+};
+
+const STATUS_TONE: Record<MasterRow['status'], 'success' | 'warning' | 'danger'> = {
+  approved: 'success',
+  pending: 'warning',
+  rejected: 'danger',
+};
+
+function MasterList() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('all');
   const [notice, setNotice] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState<MasterForm>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isFetching, refetch } = useQuery({
-    queryKey: ['addresses', page, q, status],
+    queryKey: ['address-master', page, q, status],
     queryFn: async () =>
       (
-        await api.get<ApiResponse<AddressRow[]> & { meta: PaginationMeta }>('/addresses/admin/list', {
+        await api.get<ApiResponse<MasterRow[]> & { meta: PaginationMeta }>('/addresses/admin/master', {
           params: { page, pageSize: 10, q: q || undefined, status },
         })
       ).data,
     placeholderData: keepPreviousData,
   });
 
-  const toggle = useMutation({
-    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
-      api.patch(`/addresses/admin/${id}`, { isActive }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['addresses'] }),
+  const { data: cities } = useQuery({
+    queryKey: ['cities-all'],
+    queryFn: async () =>
+      (await api.get<ApiResponse<City[]>>('/masters/cities', { params: { pageSize: 100 } })).data.data,
+  });
+
+  const review = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'approved' | 'rejected' }) =>
+      api.patch(`/addresses/admin/master/${id}/review`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['address-master'] }),
+  });
+
+  const save = useMutation({
+    mutationFn: (payload: MasterForm) => {
+      const body = {
+        cityId: payload.cityId,
+        complex: payload.complex || undefined,
+        lane1: payload.lane1 || undefined,
+        lane2: payload.lane2 || undefined,
+        area: payload.area || undefined,
+        suburb: payload.suburb || undefined,
+        pincode: payload.pincode || undefined,
+        latitude: payload.latitude ? Number(payload.latitude) : undefined,
+        longitude: payload.longitude ? Number(payload.longitude) : undefined,
+      };
+      return payload.id
+        ? api.patch(`/addresses/admin/master/${payload.id}`, body)
+        : api.post('/addresses/admin/master', body);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['address-master'] });
+      setModalOpen(false);
+      setForm({});
+    },
+    onError: (err) => setFormError(apiError(err)),
   });
 
   const importMut = useMutation({
@@ -82,8 +142,8 @@ function AddressList() {
     },
     onSuccess: (res) => {
       const { created, skipped } = res.data.data;
-      setNotice(`Imported ${created} address(es)${skipped ? `, skipped ${skipped}` : ''}.`);
-      qc.invalidateQueries({ queryKey: ['addresses'] });
+      setNotice(`Imported ${created} locality(ies)${skipped ? `, skipped ${skipped}` : ''}.`);
+      qc.invalidateQueries({ queryKey: ['address-master'] });
     },
     onError: (err) => setNotice(apiError(err)),
   });
@@ -94,33 +154,76 @@ function AddressList() {
     e.target.value = '';
   };
 
-  const columns: Column<AddressRow>[] = [
+  function openCreate() {
+    setForm({ cityId: cities?.[0]?.id });
+    setFormError(null);
+    setModalOpen(true);
+  }
+  function openEdit(r: MasterRow) {
+    setForm({
+      id: r.id,
+      cityId: cities?.find((c) => c.name === r.city)?.id,
+      complex: r.complex ?? '',
+      lane1: r.lane1 ?? '',
+      lane2: r.lane2 ?? '',
+      area: r.area ?? '',
+      suburb: r.suburb ?? '',
+      pincode: r.pincode ?? '',
+      latitude: r.latitude != null ? String(r.latitude) : '',
+      longitude: r.longitude != null ? String(r.longitude) : '',
+    });
+    setFormError(null);
+    setModalOpen(true);
+  }
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!form.cityId) {
+      setFormError('City is required');
+      return;
+    }
+    setFormError(null);
+    save.mutate(form);
+  }
+
+  const dash = (v: string | null) => (v && v.trim() ? v : '—');
+
+  const columns: Column<MasterRow>[] = [
     { header: '#', cell: (_r, i) => (page - 1) * 10 + i + 1, className: 'w-12 text-gray-400' },
-    {
-      header: 'User Name',
-      cell: (r) => (
-        <div>
-          <div className="font-medium text-gray-900">{r.userName}</div>
-          {r.mobile && <div className="text-xs text-gray-400">{r.mobile}</div>}
-        </div>
-      ),
-    },
-    { header: 'Address', cell: (r) => <div className="max-w-md truncate">{r.fullAddress}</div> },
-    { header: 'Pin Code', cell: (r) => r.pincode ?? '—' },
-    { header: 'City', cell: (r) => r.city },
-    { header: 'Status', cell: (r) => (r.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="warning">Pending</Badge>) },
-    { header: 'Created on', cell: (r) => formatDateTime(r.createdAt) },
+    { header: 'Complex / Building', cell: (r) => <span className="font-medium text-gray-900">{dash(r.complex)}</span> },
+    { header: 'Lane 1', cell: (r) => dash(r.lane1) },
+    { header: 'Lane 2', cell: (r) => dash(r.lane2) },
+    { header: 'Area', cell: (r) => dash(r.area) },
+    { header: 'Suburb', cell: (r) => dash(r.suburb) },
+    { header: 'City', cell: (r) => <div>{r.city}{r.state ? <div className="text-xs text-gray-400">{r.state}</div> : null}</div> },
+    { header: 'Pincode', cell: (r) => dash(r.pincode) },
+    { header: 'Status', cell: (r) => <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge> },
     {
       header: 'Action',
-      className: 'w-32',
+      className: 'w-40',
       cell: (r) => (
-        <Button
-          size="sm"
-          variant={r.isActive ? 'outline' : 'primary'}
-          onClick={() => toggle.mutate({ id: r.id, isActive: !r.isActive })}
-        >
-          {r.isActive ? 'Deactivate' : 'Activate'}
-        </Button>
+        <div className="flex items-center gap-1">
+          {r.status !== 'approved' && (
+            <Button size="sm" onClick={() => review.mutate({ id: r.id, status: 'approved' })} title="Approve">
+              <Check className="h-4 w-4" /> Approve
+            </Button>
+          )}
+          {r.status !== 'rejected' && (
+            <button
+              onClick={() => review.mutate({ id: r.id, status: 'rejected' })}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+              title="Reject"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            onClick={() => openEdit(r)}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -137,15 +240,19 @@ function AddressList() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <Input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search address, locality, area..." className="pl-10" />
+          <Input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search lane, area, suburb, city, pincode..." className="pl-10" />
         </div>
         <Select value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); }}>
           <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Pending / Inactive</option>
+          <option value="pending">Pending Approval</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
         </Select>
         <Button variant="outline" onClick={() => refetch()}>
           <SlidersHorizontal className="h-4 w-4" /> Filter
+        </Button>
+        <Button variant="outline" onClick={openCreate}>
+          <Plus className="h-4 w-4" /> Add Locality
         </Button>
         <Button onClick={() => fileRef.current?.click()} loading={importMut.isPending}>
           <Upload className="h-4 w-4" /> Upload Excel Sheet
@@ -158,8 +265,47 @@ function AddressList() {
         loading={isFetching && !data}
         onPageChange={setPage}
         rowKey={(r) => r.id}
-        emptyMessage="No addresses found"
+        emptyMessage="No localities found"
       />
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={`${form.id ? 'Edit' : 'Add'} locality`}>
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="City">
+            <Select
+              value={form.cityId ?? ''}
+              onChange={(e) => setForm((s) => ({ ...s, cityId: Number(e.target.value) }))}
+              className="w-full"
+            >
+              <option value="">Select...</option>
+              {(cities ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.state ? `, ${c.state}` : ''}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Complex / Building name">
+            <Input value={form.complex ?? ''} onChange={(e) => setForm((s) => ({ ...s, complex: e.target.value }))} placeholder="e.g. Sudarshan Sky Garden" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Lane 1"><Input value={form.lane1 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane1: e.target.value }))} /></Field>
+            <Field label="Lane 2"><Input value={form.lane2 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane2: e.target.value }))} /></Field>
+            <Field label="Area"><Input value={form.area ?? ''} onChange={(e) => setForm((s) => ({ ...s, area: e.target.value }))} /></Field>
+            <Field label="Suburb"><Input value={form.suburb ?? ''} onChange={(e) => setForm((s) => ({ ...s, suburb: e.target.value }))} /></Field>
+            <Field label="Pincode"><Input value={form.pincode ?? ''} onChange={(e) => setForm((s) => ({ ...s, pincode: e.target.value }))} /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Latitude"><Input value={form.latitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, latitude: e.target.value }))} placeholder="e.g. 19.2700000" /></Field>
+            <Field label="Longitude"><Input value={form.longitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, longitude: e.target.value }))} placeholder="e.g. 72.9690000" /></Field>
+          </div>
+          <p className="text-xs text-gray-400">The complex/building name powers search autofill; latitude / longitude power the app's 2&nbsp;km nearby-autofill. Residents' flat / plot numbers are never stored here.</p>
+          {formError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">{formError}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
+            <Button type="submit" loading={save.isPending}>{form.id ? 'Save changes' : 'Create'}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -23,8 +23,8 @@ interface MasterCard {
 
 const cards: MasterCard[] = [
   {
-    title: 'Address Capture',
-    description: 'Management cities, areas, lanes, apartments and house number formats.',
+    title: 'Address Master',
+    description: 'Curated locality suggestions, approval queue and the per-city address form format.',
     to: '/masters/addresses',
     icon: MapPin,
   },
@@ -35,10 +35,16 @@ const cards: MasterCard[] = [
     icon: Briefcase,
   },
   {
-    title: 'Education & Profession',
-    description: 'Manage education, school, colleges and profession master data.',
+    title: 'Education',
+    description: 'Manage education, schools, colleges and universities master data.',
     to: '/masters/education',
     icon: GraduationCap,
+  },
+  {
+    title: 'Professions',
+    description: 'Manage profession categories members can choose.',
+    to: '/masters/professions',
+    icon: Briefcase,
   },
   {
     title: 'Coupon Codes',

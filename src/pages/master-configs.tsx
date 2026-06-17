@@ -5,6 +5,45 @@ import type { MasterCrudConfig } from './master-crud';
 const activeCell = (r: { isActive?: boolean }) =>
   r.isActive === false ? <Badge>Inactive</Badge> : <Badge tone="success">Active</Badge>;
 
+// Indian states/UTs for the Cities master state dropdown.
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
+  'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh',
+  'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand',
+  'West Bengal', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Puducherry', 'Chandigarh',
+  'Andaman and Nicobar Islands', 'Dadra and Nagar Haveli and Daman and Diu', 'Lakshadweep',
+].map((s) => ({ value: s, label: s }));
+
+// Allowed address-proof document types (mirrors the backend's documented values).
+const DOC_TYPES = [
+  { value: 'utility_bill', label: 'Utility bill' },
+  { value: 'rental_agreement', label: 'Rental agreement' },
+  { value: 'govt_id', label: 'Government ID' },
+  { value: 'bank_statement', label: 'Bank statement' },
+  { value: 'employment_letter', label: 'Employment letter' },
+  { value: 'other', label: 'Other' },
+];
+
+// Controlled referral-source keys (mirrors the backend's documented values).
+const REFERRAL_SOURCES = [
+  { value: 'social_media', label: 'Social media' },
+  { value: 'friends_family', label: 'Friends & family' },
+  { value: 'print_media', label: 'Print media' },
+  { value: 'neighbourhood_poster', label: 'Neighbourhood poster' },
+  { value: 'user_id', label: 'Referred by a user' },
+  { value: 'event_id', label: 'From an event' },
+  { value: 'other', label: 'Other' },
+];
+
+// Known permission actions (the matrix is stored only; not yet enforced in the app).
+const PERMISSION_ACTIONS = [
+  'post_create', 'post_comment', 'event_create', 'event_edit', 'event_delete',
+  'group_create', 'group_post', 'message_send', 'service_offer', 'referral_share',
+].map((a) => ({ value: a, label: a }));
+
+const DOC_TYPE_LABELS: Record<string, string> = Object.fromEntries(DOC_TYPES.map((d) => [d.value, d.label]));
+
 export const masterConfigs: Record<string, MasterCrudConfig> = {
   cities: {
     title: 'Whitelisted Cities',
@@ -20,28 +59,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     ],
     fields: [
       { name: 'name', label: 'City name', type: 'text', required: true },
-      { name: 'state', label: 'State', type: 'text' },
-      { name: 'isActive', label: 'Active', type: 'checkbox' },
-    ],
-  },
-
-  'service-categories': {
-    title: 'Service Providers Category',
-    breadcrumb: 'Admin › Masters & Controls',
-    subtitle: 'Categories for service providers',
-    endpoint: '/masters/service-categories',
-    queryKey: 'm-service-categories',
-    searchPlaceholder: 'Search categories...',
-    columns: [
-      { header: 'Category', cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
-      {
-        header: 'Subcategories',
-        cell: (r) => (r.subcategories?.length ?? 0) + ' items',
-      },
-      { header: 'Status', cell: activeCell },
-    ],
-    fields: [
-      { name: 'name', label: 'Category name', type: 'text', required: true },
+      { name: 'state', label: 'State', type: 'select', options: INDIAN_STATES },
       { name: 'isActive', label: 'Active', type: 'checkbox' },
     ],
   },
@@ -85,16 +103,17 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
   },
 
   education: {
-    title: 'Education & Profession',
+    title: 'Education',
     breadcrumb: 'Admin › Masters & Controls',
     subtitle: 'Education master data',
     endpoint: '/masters/education',
     queryKey: 'm-education',
-    searchPlaceholder: 'Search degree, college...',
+    searchPlaceholder: 'Search degree, college, university...',
     columns: [
       { header: 'Degree', cell: (r) => r.degree ?? '—' },
       { header: 'School', cell: (r) => r.schoolName ?? '—' },
       { header: 'College', cell: (r) => r.collegeName ?? '—' },
+      { header: 'University', cell: (r) => r.university ?? '—' },
     ],
     fields: [
       { name: 'degree', label: 'Degree', type: 'text' },
@@ -102,7 +121,21 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
       { name: 'schoolCity', label: 'School city', type: 'text' },
       { name: 'collegeName', label: 'College name', type: 'text' },
       { name: 'collegeCity', label: 'College city', type: 'text' },
+      { name: 'university', label: 'University', type: 'text' },
     ],
+  },
+
+  professions: {
+    title: 'Professions',
+    breadcrumb: 'Admin › Masters & Controls',
+    subtitle: 'Profession categories members can choose',
+    endpoint: '/masters/professions',
+    queryKey: 'm-professions',
+    searchPlaceholder: 'Search professions...',
+    columns: [
+      { header: 'Profession', cell: (r) => <span className="font-medium text-gray-900">{r.category}</span> },
+    ],
+    fields: [{ name: 'category', label: 'Profession', type: 'text', required: true }],
   },
 
   'doc-types': {
@@ -113,8 +146,8 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     queryKey: 'm-doc-types',
     searchPlaceholder: 'Search document types...',
     columns: [
-      { header: 'Document Type', cell: (r) => <span className="font-medium">{r.docType}</span> },
-      { header: 'City ID', cell: (r) => r.cityId },
+      { header: 'Document Type', cell: (r) => <span className="font-medium">{DOC_TYPE_LABELS[r.docType] ?? r.docType}</span> },
+      { header: 'City', cell: (r) => r.city?.name ?? '—' },
       { header: 'Status', cell: activeCell },
     ],
     fields: [
@@ -126,7 +159,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
         optionsEndpoint: '/masters/cities',
         optionLabel: (c) => c.name,
       },
-      { name: 'docType', label: 'Document type', type: 'text', required: true },
+      { name: 'docType', label: 'Document type', type: 'select', required: true, options: DOC_TYPES },
       { name: 'isActive', label: 'Active', type: 'checkbox' },
     ],
   },
@@ -154,7 +187,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
       { header: 'Label', cell: (r) => r.label ?? '—' },
     ],
     fields: [
-      { name: 'source', label: 'Source key', type: 'text', required: true },
+      { name: 'source', label: 'Source', type: 'select', required: true, options: REFERRAL_SOURCES },
       { name: 'label', label: 'Label', type: 'text' },
     ],
   },
@@ -162,7 +195,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
   permissions: {
     title: 'Permissions',
     breadcrumb: 'Admin › Masters & Controls',
-    subtitle: 'Permission matrix for residents and service providers',
+    subtitle: 'Controls what residents vs service providers are allowed to do in the app (e.g. create events/posts). Stored centrally here; enforcement in the mobile app is a separate step.',
     endpoint: '/masters/permissions',
     queryKey: 'm-permissions',
     searchPlaceholder: 'Search actions...',
@@ -185,7 +218,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
           { value: 'service_provider', label: 'Service Provider' },
         ],
       },
-      { name: 'action', label: 'Action key', type: 'text', required: true },
+      { name: 'action', label: 'Action', type: 'select', required: true, options: PERMISSION_ACTIONS },
       { name: 'isAllowed', label: 'Allowed', type: 'checkbox' },
     ],
   },

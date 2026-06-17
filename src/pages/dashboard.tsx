@@ -17,14 +17,16 @@ function StatCard({
   label,
   value,
   tint,
+  href,
 }: {
   icon: typeof Users;
   label: string;
   value: number | string;
   tint: string;
+  href?: string;
 }) {
-  return (
-    <Card className="p-5">
+  const card = (
+    <Card className={`p-5 ${href ? 'transition-shadow hover:shadow-md' : ''}`}>
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm text-gray-500">{label}</div>
@@ -36,6 +38,7 @@ function StatCard({
       </div>
     </Card>
   );
+  return href ? <a href={href} className="block">{card}</a> : card;
 }
 
 export function DashboardPage() {
@@ -61,24 +64,28 @@ export function DashboardPage() {
               label="Residents"
               value={data.members.residents}
               tint="bg-brand-50 text-brand-600"
+              href="/members?userType=resident"
             />
             <StatCard
               icon={Briefcase}
               label="Service Providers"
               value={data.members.serviceProviders}
               tint="bg-violet-50 text-violet-600"
+              href="/members?userType=service_provider"
             />
             <StatCard
               icon={CalendarDays}
               label="Events"
               value={data.events}
               tint="bg-amber-50 text-amber-600"
+              href="/events"
             />
             <StatCard
               icon={UsersRound}
               label="Groups"
               value={data.groups}
               tint="bg-sky-50 text-sky-600"
+              href="/groups"
             />
           </div>
 
@@ -88,18 +95,21 @@ export function DashboardPage() {
               label="Total Posts"
               value={data.posts}
               tint="bg-gray-100 text-gray-600"
+              href="/reports"
             />
             <StatCard
               icon={Clock}
               label="Pending Address Docs"
               value={data.pending.addressDocs}
               tint="bg-amber-50 text-amber-600"
+              href="/verifications"
             />
             <StatCard
               icon={Clock}
               label="Pending Verifications"
               value={data.pending.profileVerifications}
               tint="bg-red-50 text-red-600"
+              href="/verifications"
             />
           </div>
         </>

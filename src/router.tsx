@@ -7,12 +7,14 @@ import {
   Outlet,
   useParams,
 } from '@tanstack/react-router';
-import { isAuthenticated } from '@/lib/auth';
+import { isAuthenticated, isSuperAdmin } from '@/lib/auth';
 import { AppLayout } from '@/components/layout/app-layout';
+import { AdminsPage } from '@/pages/admins';
 import { LoginPage } from '@/pages/login';
 import { DashboardPage } from '@/pages/dashboard';
 import { MastersPage } from '@/pages/masters';
 import { AddressesPage } from '@/pages/addresses';
+import { ServiceCategoriesPage } from '@/pages/service-categories';
 import { MembersPage } from '@/pages/members';
 import { MasterCrudPage } from '@/pages/master-crud';
 import { masterConfigs } from '@/pages/master-configs';
@@ -52,6 +54,11 @@ const indexRoute = createRoute({
   },
 });
 
+// Master data + admin management are super-admin only; ops_admins land on the dashboard.
+const requireSuper = () => {
+  if (!isSuperAdmin()) throw redirect({ to: '/dashboard' });
+};
+
 const dashboardRoute = createRoute({
   getParentRoute: () => authLayoutRoute,
   path: '/dashboard',
@@ -61,13 +68,22 @@ const dashboardRoute = createRoute({
 const mastersRoute = createRoute({
   getParentRoute: () => authLayoutRoute,
   path: '/masters',
+  beforeLoad: requireSuper,
   component: MastersPage,
 });
 
 const addressesRoute = createRoute({
   getParentRoute: () => authLayoutRoute,
   path: '/masters/addresses',
+  beforeLoad: requireSuper,
   component: AddressesPage,
+});
+
+const serviceCategoriesRoute = createRoute({
+  getParentRoute: () => authLayoutRoute,
+  path: '/masters/service-categories',
+  beforeLoad: requireSuper,
+  component: ServiceCategoriesPage,
 });
 
 function ResourceRoute() {
@@ -80,7 +96,15 @@ function ResourceRoute() {
 const masterResourceRoute = createRoute({
   getParentRoute: () => authLayoutRoute,
   path: '/masters/$resource',
+  beforeLoad: requireSuper,
   component: ResourceRoute,
+});
+
+const adminsRoute = createRoute({
+  getParentRoute: () => authLayoutRoute,
+  path: '/admins',
+  beforeLoad: requireSuper,
+  component: AdminsPage,
 });
 
 const membersRoute = createRoute({
@@ -115,7 +139,9 @@ const routeTree = rootRoute.addChildren([
     dashboardRoute,
     mastersRoute,
     addressesRoute,
+    serviceCategoriesRoute,
     masterResourceRoute,
+    adminsRoute,
     membersRoute,
     verificationsRoute,
     serviceApprovalsRoute,

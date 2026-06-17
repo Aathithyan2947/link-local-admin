@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, assetUrl, type ApiResponse } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Card, Spinner, Badge } from '@/components/ui/card';
+import { Select } from '@/components/ui/input';
 
 interface NewMember {
   id: number;
@@ -16,9 +18,11 @@ interface NewMember {
 }
 
 export function NewMembersPage() {
+  const [days, setDays] = useState(30);
   const { data, isLoading } = useQuery({
-    queryKey: ['new-members'],
-    queryFn: async () => (await api.get<ApiResponse<NewMember[]>>('/admin/new-members')).data.data,
+    queryKey: ['new-members', days],
+    queryFn: async () =>
+      (await api.get<ApiResponse<NewMember[]>>('/admin/new-members', { params: { days } })).data.data,
   });
 
   return (
@@ -26,12 +30,20 @@ export function NewMembersPage() {
       <PageHeader
         breadcrumb="Admin"
         title="New Members"
-        subtitle="Recently joined members showcased to the community"
+        subtitle={`Members who joined in the last ${days} days`}
       />
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-sm text-gray-500">Joined in the last</span>
+        <Select value={days} onChange={(e) => setDays(Number(e.target.value))} className="w-32">
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+        </Select>
+      </div>
       {isLoading ? (
         <Spinner />
       ) : !data?.length ? (
-        <Card className="py-16 text-center text-gray-400">No new members in the last 30 days</Card>
+        <Card className="py-16 text-center text-gray-400">No new members in the last {days} days</Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((m) => (

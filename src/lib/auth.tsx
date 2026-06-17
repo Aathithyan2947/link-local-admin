@@ -37,6 +37,14 @@ export function isAuthenticated(): boolean {
   return !!localStorage.getItem(TOKEN_KEY);
 }
 
+/** Standalone role readers (usable in router beforeLoad guards, outside React). */
+export function currentAdminRole(): string | undefined {
+  return readStoredAdmin()?.role;
+}
+export function isSuperAdmin(): boolean {
+  return currentAdminRole() === 'super_admin';
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [admin, setAdmin] = useState<AdminUser | null>(readStoredAdmin);
 

@@ -12,19 +12,22 @@ import {
   ShieldCheck,
   BadgePlus,
   Sparkles,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
 
 interface NavItem {
   label: string;
   to: string;
   icon: typeof LayoutDashboard;
+  superAdminOnly?: boolean;
 }
 
 const mainNav: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
-  { label: 'Masters & Controls', to: '/masters', icon: SlidersHorizontal },
-  { label: 'Address Capture', to: '/masters/addresses', icon: MapPin },
+  { label: 'Masters & Controls', to: '/masters', icon: SlidersHorizontal, superAdminOnly: true },
+  { label: 'Address Master', to: '/masters/addresses', icon: MapPin, superAdminOnly: true },
   { label: 'Members', to: '/members', icon: Users },
   { label: 'Verifications', to: '/verifications', icon: ShieldCheck },
   { label: 'Service Approvals', to: '/service-approvals', icon: BadgePlus },
@@ -34,10 +37,14 @@ const mainNav: NavItem[] = [
   { label: 'Groups', to: '/groups', icon: UsersRound },
   { label: 'Reports', to: '/reports', icon: BarChart3 },
   { label: 'Activity Logs', to: '/activity-logs', icon: ScrollText },
+  { label: 'Admins', to: '/admins', icon: UserCog, superAdminOnly: true },
 ];
 
 export function Sidebar() {
   const { location } = useRouterState();
+  const { admin } = useAuth();
+  const isSuper = admin?.role === 'super_admin';
+  const nav = mainNav.filter((item) => !item.superAdminOnly || isSuper);
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-gray-100 bg-white">
@@ -54,7 +61,7 @@ export function Sidebar() {
         Main
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3">
-        {mainNav.map((item) => {
+        {nav.map((item) => {
           const active =
             item.to === '/masters'
               ? location.pathname === '/masters'
