@@ -16,6 +16,7 @@ import { MastersPage } from '@/pages/masters';
 import { AddressesPage } from '@/pages/addresses';
 import { ServiceCategoriesPage } from '@/pages/service-categories';
 import { MembersPage } from '@/pages/members';
+import { MemberDetailPage } from '@/pages/member-detail';
 import { MasterCrudPage } from '@/pages/master-crud';
 import { masterConfigs } from '@/pages/master-configs';
 import { PlaceholderPage } from '@/pages/placeholder';
@@ -113,6 +114,12 @@ const membersRoute = createRoute({
   component: MembersPage,
 });
 
+const memberDetailRoute = createRoute({
+  getParentRoute: () => authLayoutRoute,
+  path: '/members/$id',
+  component: MemberDetailPage,
+});
+
 const placeholder = (path: string, title: string) =>
   createRoute({
     getParentRoute: () => authLayoutRoute,
@@ -143,6 +150,7 @@ const routeTree = rootRoute.addChildren([
     masterResourceRoute,
     adminsRoute,
     membersRoute,
+    memberDetailRoute,
     verificationsRoute,
     serviceApprovalsRoute,
     newMembersRoute,

@@ -6,6 +6,7 @@ import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Badge } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/input';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { cn } from '@/lib/utils';
 
@@ -26,6 +27,7 @@ interface DocRow {
   id: number;
   userName: string;
   docType: string;
+  description: string | null;
   docUrl: string;
   status: string;
   fullAddress: string;
@@ -33,16 +35,27 @@ interface DocRow {
   createdAt: string;
 }
 
+const DOC_TYPE_LABELS: Record<string, string> = {
+  utility_bill: 'Utility bill',
+  rental_agreement: 'Rental agreement',
+  govt_id: 'Government ID',
+  bank_statement: 'Bank statement',
+  employment_letter: 'Employment letter',
+  other: 'Other',
+};
+const docTypeLabel = (t: string) => DOC_TYPE_LABELS[t] ?? t;
+
 function ProfilesTab() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('pending'); // pending | rejected | verified
   const { data, isFetching } = useQuery({
-    queryKey: ['verifications', page],
+    queryKey: ['verifications', page, status],
     queryFn: async () =>
       (
         await api.get<ApiResponse<VerificationRow[]> & { meta: PaginationMeta }>(
           '/admin/verifications',
-          { params: { page, pageSize: 10, status: 'pending' } },
+          { params: { page, pageSize: 10, status } },
         )
       ).data,
     placeholderData: keepPreviousData,
@@ -51,7 +64,11 @@ function ProfilesTab() {
   const review = useMutation({
     mutationFn: ({ userId, status }: { userId: number; status: 'approved' | 'rejected' }) =>
       api.patch(`/admin/verifications/${userId}`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['verifications'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['verifications'] });
+      qc.invalidateQueries({ queryKey: ['members'] });
+      qc.invalidateQueries({ queryKey: ['address-docs'] });
+    },
   });
 
   const columns: Column<VerificationRow>[] = [
@@ -91,27 +108,40 @@ function ProfilesTab() {
       header: 'Action',
       cell: (r) => (
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => review.mutate({ userId: r.id, status: 'approved' })}>
-            Verify
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => review.mutate({ userId: r.id, status: 'rejected' })}>
-            Reject
-          </Button>
+          {status !== 'verified' && (
+            <Button size="sm" onClick={() => review.mutate({ userId: r.id, status: 'approved' })}>
+              Verify
+            </Button>
+          )}
+          {status !== 'rejected' && (
+            <Button size="sm" variant="outline" onClick={() => review.mutate({ userId: r.id, status: 'rejected' })}>
+              Reject
+            </Button>
+          )}
         </div>
       ),
     },
   ];
 
   return (
-    <DataTable
-      columns={columns}
-      rows={data?.data ?? []}
-      meta={data?.meta}
-      loading={isFetching && !data}
-      onPageChange={setPage}
-      rowKey={(r) => r.id}
-      emptyMessage="No pending profile verifications"
-    />
+    <div>
+      <div className="mb-4">
+        <Select value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); }}>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+          <option value="verified">Verified</option>
+        </Select>
+      </div>
+      <DataTable
+        columns={columns}
+        rows={data?.data ?? []}
+        meta={data?.meta}
+        loading={isFetching && !data}
+        onPageChange={setPage}
+        rowKey={(r) => r.id}
+        emptyMessage={`No ${status} profile verifications`}
+      />
+    </div>
   );
 }
 
@@ -132,12 +162,25 @@ function DocsTab() {
   const review = useMutation({
     mutationFn: ({ id, status }: { id: number; status: 'approved' | 'rejected' }) =>
       api.patch(`/addresses/admin/docs/${id}`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['address-docs'] }),
+    // Approving/rejecting a proof changes the member's verification status — refresh those tabs.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['address-docs'] });
+      qc.invalidateQueries({ queryKey: ['members'] });
+      qc.invalidateQueries({ queryKey: ['verifications'] });
+    },
   });
 
   const columns: Column<DocRow>[] = [
     { header: 'Member', cell: (r) => <span className="font-medium text-gray-900">{r.userName}</span> },
-    { header: 'Doc Type', cell: (r) => r.docType },
+    {
+      header: 'Doc Type',
+      cell: (r) => (
+        <div>
+          <div>{docTypeLabel(r.docType)}</div>
+          {r.description ? <div className="text-xs text-gray-400">{r.description}</div> : null}
+        </div>
+      ),
+    },
     { header: 'Address', cell: (r) => <span className="max-w-xs truncate block">{r.fullAddress}</span> },
     { header: 'Submitted', cell: (r) => formatDate(r.createdAt) },
     {

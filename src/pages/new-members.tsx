@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { api, assetUrl, type ApiResponse } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
@@ -47,7 +48,8 @@ export function NewMembersPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((m) => (
-            <Card key={m.id} className="p-5">
+            <Link key={m.id} to="/members/$id" params={{ id: String(m.id) }}>
+              <Card className="group h-full p-5 transition-shadow hover:shadow-md">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-lg font-bold text-brand-600">
                   {m.photoUrl ? (
@@ -70,7 +72,8 @@ export function NewMembersPage() {
                 </Badge>
                 <span className="text-xs text-gray-400">Joined {formatDate(m.joinedAt)}</span>
               </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       )}

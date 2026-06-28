@@ -35,9 +35,21 @@ const cards: MasterCard[] = [
     icon: Briefcase,
   },
   {
-    title: 'Education',
-    description: 'Manage education, schools, colleges and universities master data.',
+    title: 'Education (Degrees)',
+    description: 'Curated degree catalog and approval of member-suggested degrees.',
     to: '/masters/education',
+    icon: GraduationCap,
+  },
+  {
+    title: 'Schools',
+    description: 'Curated school catalog and approval of member-suggested schools.',
+    to: '/masters/schools',
+    icon: GraduationCap,
+  },
+  {
+    title: 'Colleges',
+    description: 'Curated college catalog and approval of member-suggested colleges.',
+    to: '/masters/colleges',
     icon: GraduationCap,
   },
   {

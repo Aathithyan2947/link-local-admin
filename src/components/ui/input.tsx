@@ -27,10 +27,21 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   );
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold text-gray-700">{label}</span>
+      <span className="mb-1.5 block text-sm font-semibold text-gray-700">
+        {label}
+        {required && <span className="text-red-500"> *</span>}
+      </span>
       {children}
     </label>
   );

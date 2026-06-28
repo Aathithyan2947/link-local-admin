@@ -7,11 +7,12 @@ import { Badge, Card, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
-const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean'];
+const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file'];
 
 const list = (endpoint: string, params: Record<string, unknown>) =>
   api.get<ApiResponse<Row[]>>(endpoint, { params: { pageSize: 100, ...params } }).then((r) => r.data.data);
@@ -19,6 +20,9 @@ const list = (endpoint: string, params: Record<string, unknown>) =>
 export function ServiceCategoriesPage() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Row | null>(null);
+  // Delete confirmation (modern modal, not the native confirm)
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'cat' | 'sub'; row: Row } | null>(null);
+  const [delError, setDelError] = useState<string | null>(null);
 
   const cats = useQuery({ queryKey: ['svc-cats'], queryFn: () => list('/masters/service-categories', {}) });
   const selectedId = selected?.id;
@@ -42,7 +46,8 @@ export function ServiceCategoriesPage() {
   });
   const delCat = useMutation({
     mutationFn: (id: number) => api.delete(`/masters/service-categories/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['svc-cats'] }); setSelected(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['svc-cats'] }); setSelected(null); setPendingDelete(null); },
+    onError: (e) => setDelError(apiError(e)),
   });
 
   // ── Subcategory modal ──
@@ -59,11 +64,19 @@ export function ServiceCategoriesPage() {
   });
   const delSub = useMutation({
     mutationFn: (id: number) => api.delete(`/masters/service-subcategories/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['svc-subs', selectedId] }); qc.invalidateQueries({ queryKey: ['svc-cats'] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['svc-subs', selectedId] }); qc.invalidateQueries({ queryKey: ['svc-cats'] }); setPendingDelete(null); },
+    onError: (e) => setDelError(apiError(e)),
   });
 
   // ── Onboarding fields modal (per subcategory) ──
   const [fieldsFor, setFieldsFor] = useState<Row | null>(null);
+
+  const delPending = pendingDelete?.kind === 'cat' ? delCat.isPending : delSub.isPending;
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    setDelError(null);
+    (pendingDelete.kind === 'cat' ? delCat : delSub).mutate(pendingDelete.row.id);
+  }
 
   const openCatCreate = () => { setCatForm({ isActive: true }); setCatErr(null); setCatModal(true); };
   const openCatEdit = (c: Row) => { setCatForm({ id: c.id, name: c.name, isActive: c.isActive }); setCatErr(null); setCatModal(true); };
@@ -100,7 +113,7 @@ export function ServiceCategoriesPage() {
                   </span>
                   <span className="flex items-center gap-1">
                     <button onClick={(e) => { e.stopPropagation(); openCatEdit(c); }} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); if (confirm(`Delete category "${c.name}"?`)) delCat.mutate(c.id); }} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setPendingDelete({ kind: 'cat', row: c }); }} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                     <ChevronRight className="h-4 w-4 text-gray-300" />
                   </span>
                 </div>
@@ -143,7 +156,7 @@ export function ServiceCategoriesPage() {
                           </td>
                           <td className="px-4 py-2 text-right">
                             <button onClick={() => openSubEdit(s)} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                            <button onClick={() => { if (confirm(`Delete sub-category "${s.name}"?`)) delSub.mutate(s.id); }} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                            <button onClick={() => setPendingDelete({ kind: 'sub', row: s })} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
                           </td>
                         </tr>
                       ))}
@@ -190,6 +203,29 @@ export function ServiceCategoriesPage() {
       </Modal>
 
       {fieldsFor && <FieldsModal subcategory={fieldsFor} onClose={() => setFieldsFor(null)} />}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          open
+          destructive
+          title={pendingDelete.kind === 'cat' ? 'Delete category' : 'Delete sub-category'}
+          confirmLabel="Delete"
+          loading={delPending}
+          error={delError}
+          message={
+            <>
+              Delete{' '}
+              <span className="font-semibold text-gray-900">“{pendingDelete.row.name}”</span>?{' '}
+              {pendingDelete.kind === 'cat'
+                ? 'Its sub-categories and onboarding fields will be affected.'
+                : 'Its onboarding fields will be removed too.'}{' '}
+              This can’t be undone.
+            </>
+          }
+          onConfirm={confirmDelete}
+          onClose={() => { setPendingDelete(null); setDelError(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -203,6 +239,27 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
 
   const [form, setForm] = useState<Row>({ fieldType: 'text', isRequired: false });
   const [err, setErr] = useState<string | null>(null);
+
+  // ── Prefill: copy fields from another sub-category ──
+  const [copyFrom, setCopyFrom] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const allSubs = useQuery({ queryKey: ['all-subs'], queryFn: () => list('/masters/service-subcategories', {}) });
+  const copy = useMutation({
+    mutationFn: (fromId: number) =>
+      api.post<ApiResponse<{ copied: number; skipped: number }>>('/masters/subcategory-fields/copy', {
+        fromSubcategoryId: fromId,
+        toSubcategoryId: subId,
+      }),
+    onSuccess: (res) => {
+      const { copied, skipped } = res.data.data;
+      setNotice(`Copied ${copied} field${copied === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} already present` : ''}.`);
+      setCopyFrom('');
+      qc.invalidateQueries({ queryKey: key });
+    },
+    onError: (e) => setErr(apiError(e)),
+  });
+
+  const copySources = (allSubs.data ?? []).filter((s) => s.id !== subId);
 
   const save = useMutation({
     mutationFn: (f: Row) => {
@@ -225,10 +282,38 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
     mutationFn: (id: number) => api.delete(`/masters/subcategory-fields/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   });
+  const [pendingFieldDelete, setPendingFieldDelete] = useState<Row | null>(null);
 
   return (
     <Modal open onClose={onClose} title={`Onboarding fields — ${subcategory.name}`}>
       <p className="mb-3 text-sm text-gray-500">Extra questions service providers answer for this sub-category during onboarding.</p>
+
+      {copySources.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50/60 p-2">
+          <Select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="min-w-0 flex-1">
+            <option value="">Prefill fields from another sub-category…</option>
+            {copySources.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.category?.name ? `${s.category.name} › ${s.name}` : s.name}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!copyFrom}
+            loading={copy.isPending}
+            onClick={() => copy.mutate(Number(copyFrom))}
+            className="shrink-0"
+          >
+            Prefill
+          </Button>
+        </div>
+      )}
+      {notice && (
+        <div className="mb-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700">{notice}</div>
+      )}
+
       {fields.isLoading ? <Spinner /> : (
         <div className="mb-4 max-h-56 overflow-auto rounded-xl border border-gray-100">
           <table className="w-full text-sm">
@@ -239,7 +324,7 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
                   <td className="px-3 py-2 text-gray-500">{f.fieldType}{f.isRequired ? ' • required' : ''}</td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => setForm({ id: f.id, fieldName: f.fieldName, fieldType: f.fieldType, fieldOptions: f.fieldOptions, isRequired: f.isRequired, sortOrder: f.sortOrder })} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => del.mutate(f.id)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => setPendingFieldDelete(f)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
               ))}
@@ -273,6 +358,25 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
           <Button type="submit" loading={save.isPending}>{form.id ? 'Save field' : 'Add field'}</Button>
         </div>
       </form>
+
+      {pendingFieldDelete && (
+        <ConfirmDialog
+          open
+          destructive
+          title="Delete field"
+          confirmLabel="Delete"
+          loading={del.isPending}
+          message={
+            <>
+              Remove the field{' '}
+              <span className="font-semibold text-gray-900">“{pendingFieldDelete.fieldName}”</span> from this
+              sub-category?
+            </>
+          }
+          onConfirm={() => del.mutate(pendingFieldDelete.id, { onSettled: () => setPendingFieldDelete(null) })}
+          onClose={() => setPendingFieldDelete(null)}
+        />
+      )}
     </Modal>
   );
 }

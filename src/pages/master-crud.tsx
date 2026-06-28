@@ -5,10 +5,11 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Check } from 'lucide-react';
 import { api, apiError, type ApiResponse, type PaginationMeta } from '@/lib/api';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/card';
 import { Field, Input, Select } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -36,6 +37,16 @@ export interface MasterCrudConfig {
   columns: Column<Row>[];
   fields: FieldConfig[];
   searchPlaceholder?: string;
+  /**
+   * Enables verification/approval: shows an Active/Pending status column, a status filter,
+   * and an Approve action. User-suggested rows arrive with `isActive: false` (pending).
+   */
+  approvable?: boolean;
+  /**
+   * Replaces the hard Delete with a reversible Deactivate / Activate toggle (`isActive`).
+   * Used for entities that shouldn't be destroyed (e.g. whitelisted cities with linked data).
+   */
+  softDelete?: boolean;
 }
 
 function RemoteSelect({
@@ -70,20 +81,44 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
+  const [active, setActive] = useState('all'); // approval filter: all | active | pending
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [form, setForm] = useState<Row>({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const { data, isFetching } = useQuery({
-    queryKey: [config.queryKey, page, q],
+    queryKey: [config.queryKey, page, q, active],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Row[]> & { meta: PaginationMeta }>(config.endpoint, {
-        params: { page, pageSize: 10, q: q || undefined },
+        params: {
+          page,
+          pageSize: 10,
+          q: q || undefined,
+          isActive:
+            !config.approvable || active === 'all' ? undefined : active === 'active' ? 'true' : 'false',
+        },
       });
       return res.data;
     },
     placeholderData: keepPreviousData,
+  });
+
+  const approve = useMutation({
+    mutationFn: (id: number) => api.patch(`${config.endpoint}/${id}`, { isActive: true }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [config.queryKey] }),
+  });
+
+  // Reversible activate/deactivate (used in place of hard delete for softDelete configs).
+  const toggleActive = useMutation({
+    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
+      api.patch(`${config.endpoint}/${id}`, { isActive }),
+    onSuccess: () => {
+      setNotice(null);
+      qc.invalidateQueries({ queryKey: [config.queryKey] });
+    },
+    onError: (err) => setNotice(apiError(err)),
   });
 
   const save = useMutation({
@@ -100,12 +135,18 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
 
   const remove = useMutation({
     mutationFn: (id: number) => api.delete(`${config.endpoint}/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [config.queryKey] }),
+    onSuccess: () => {
+      setNotice(null);
+      qc.invalidateQueries({ queryKey: [config.queryKey] });
+    },
+    // Surface the reason (e.g. "city has members — deactivate instead") instead of failing silently.
+    onError: (err) => setNotice(apiError(err)),
   });
 
   function openCreate() {
     setEditing(null);
-    setForm({});
+    // Admin-created master rows are approved by default (only user-suggested ones are pending).
+    setForm(config.approvable ? { isActive: true } : {});
     setError(null);
     setModalOpen(true);
   }
@@ -147,11 +188,30 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
   const columnsWithActions: Column<Row>[] = useMemo(
     () => [
       ...config.columns,
+      ...(config.approvable
+        ? [
+            {
+              header: 'Status',
+              className: 'w-32',
+              cell: (row: Row) =>
+                row.isActive ? (
+                  <Badge tone="success">Approved</Badge>
+                ) : (
+                  <Badge tone="warning">Pending</Badge>
+                ),
+            } as Column<Row>,
+          ]
+        : []),
       {
         header: 'Action',
-        className: 'w-28',
+        className: 'w-36',
         cell: (row: Row) => (
           <div className="flex gap-1">
+            {config.approvable && !row.isActive && (
+              <Button size="sm" onClick={() => approve.mutate(row.id)} title="Approve">
+                <Check className="h-4 w-4" /> Approve
+              </Button>
+            )}
             <button
               onClick={() => openEdit(row)}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
@@ -159,21 +219,31 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
             >
               <Pencil className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => {
-                if (confirm('Delete this record?')) remove.mutate(row.id);
-              }}
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
-              title="Delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            {config.softDelete ? (
+              <Button
+                size="sm"
+                variant={row.isActive === false ? 'primary' : 'outline'}
+                onClick={() => toggleActive.mutate({ id: row.id, isActive: row.isActive === false })}
+              >
+                {row.isActive === false ? 'Activate' : 'Deactivate'}
+              </Button>
+            ) : (
+              <button
+                onClick={() => {
+                  if (confirm('Delete this record?')) remove.mutate(row.id);
+                }}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                title="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [config.columns],
+    [config.columns, config.approvable, config.softDelete],
   );
 
   return (
@@ -189,17 +259,39 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
         }
       />
 
-      <div className="mb-4 relative max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <Input
-          value={q}
-          onChange={(e) => {
-            setPage(1);
-            setQ(e.target.value);
-          }}
-          placeholder={config.searchPlaceholder ?? 'Search...'}
-          className="pl-10"
-        />
+      {notice && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative max-w-md flex-1 min-w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input
+            value={q}
+            onChange={(e) => {
+              setPage(1);
+              setQ(e.target.value);
+            }}
+            placeholder={config.searchPlaceholder ?? 'Search...'}
+            className="pl-10"
+          />
+        </div>
+        {config.approvable && (
+          <Select
+            value={active}
+            onChange={(e) => {
+              setPage(1);
+              setActive(e.target.value);
+            }}
+          >
+            <option value="all">All Status</option>
+            <option value="pending">Pending Approval</option>
+            <option value="active">Approved</option>
+          </Select>
+        )}
       </div>
 
       <DataTable

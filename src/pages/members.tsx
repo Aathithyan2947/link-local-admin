@@ -19,6 +19,7 @@ interface MemberRow {
   mobile: string | null;
   userType: string;
   isVerified: boolean;
+  verificationStatus: 'verified' | 'pending' | 'rejected' | 'none';
   isActive: boolean;
   isBlocked: boolean;
   createdAt: string;
@@ -53,7 +54,12 @@ export function MembersPage() {
   const mutation = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Record<string, boolean> }) =>
       api.patch(`/admin/members/${id}/status`, patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['members'] }),
+    // Verification status is shared across tabs — refresh the verification queues too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['members'] });
+      qc.invalidateQueries({ queryKey: ['verifications'] });
+      qc.invalidateQueries({ queryKey: ['address-docs'] });
+    },
   });
 
   const columns: Column<MemberRow>[] = [
@@ -80,7 +86,16 @@ export function MembersPage() {
     },
     {
       header: 'Verified',
-      cell: (r) => (r.isVerified ? <Badge tone="success">Verified</Badge> : <Badge>Pending</Badge>),
+      cell: (r) =>
+        r.verificationStatus === 'verified' ? (
+          <Badge tone="success">Verified</Badge>
+        ) : r.verificationStatus === 'rejected' ? (
+          <Badge tone="danger">Rejected</Badge>
+        ) : r.verificationStatus === 'pending' ? (
+          <Badge tone="warning">Pending</Badge>
+        ) : (
+          <Badge>Not submitted</Badge>
+        ),
     },
     {
       header: 'Status',
@@ -98,7 +113,7 @@ export function MembersPage() {
       header: 'Action',
       cell: (r) => (
         <div className="flex gap-2">
-          {!r.isVerified && (
+          {r.verificationStatus !== 'verified' && (
             <Button
               size="sm"
               variant="outline"

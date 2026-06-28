@@ -52,6 +52,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     endpoint: '/masters/cities',
     queryKey: 'm-cities',
     searchPlaceholder: 'Search cities...',
+    softDelete: true, // cities are deactivated, not deleted (they have linked members/addresses)
     columns: [
       { header: 'Name', cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
       { header: 'State', cell: (r) => r.state ?? '—' },
@@ -109,8 +110,9 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     endpoint: '/masters/education',
     queryKey: 'm-education',
     searchPlaceholder: 'Search degree, college, university...',
+    approvable: true,
     columns: [
-      { header: 'Degree', cell: (r) => r.degree ?? '—' },
+      { header: 'Degree', cell: (r) => <span className="font-medium text-gray-900">{r.degree ?? '—'}</span> },
       { header: 'School', cell: (r) => r.schoolName ?? '—' },
       { header: 'College', cell: (r) => r.collegeName ?? '—' },
       { header: 'University', cell: (r) => r.university ?? '—' },
@@ -122,6 +124,7 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
       { name: 'collegeName', label: 'College name', type: 'text' },
       { name: 'collegeCity', label: 'College city', type: 'text' },
       { name: 'university', label: 'University', type: 'text' },
+      { name: 'isActive', label: 'Active (approved & shown in app)', type: 'checkbox' },
     ],
   },
 
@@ -132,10 +135,52 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     endpoint: '/masters/professions',
     queryKey: 'm-professions',
     searchPlaceholder: 'Search professions...',
+    approvable: true,
     columns: [
       { header: 'Profession', cell: (r) => <span className="font-medium text-gray-900">{r.category}</span> },
     ],
-    fields: [{ name: 'category', label: 'Profession', type: 'text', required: true }],
+    fields: [
+      { name: 'category', label: 'Profession', type: 'text', required: true },
+      { name: 'isActive', label: 'Active (approved & shown in app)', type: 'checkbox' },
+    ],
+  },
+
+  schools: {
+    title: 'Schools',
+    breadcrumb: 'Admin › Masters & Controls',
+    subtitle: 'Curated schools members can choose (independent of degree & college)',
+    endpoint: '/masters/schools',
+    queryKey: 'm-schools',
+    searchPlaceholder: 'Search schools...',
+    approvable: true,
+    columns: [
+      { header: 'School', cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
+      { header: 'City', cell: (r) => r.city ?? '—' },
+    ],
+    fields: [
+      { name: 'name', label: 'School name', type: 'text', required: true },
+      { name: 'city', label: 'City', type: 'text' },
+      { name: 'isActive', label: 'Active (approved & shown in app)', type: 'checkbox' },
+    ],
+  },
+
+  colleges: {
+    title: 'Colleges',
+    breadcrumb: 'Admin › Masters & Controls',
+    subtitle: 'Curated colleges members can choose (independent of degree & school)',
+    endpoint: '/masters/colleges',
+    queryKey: 'm-colleges',
+    searchPlaceholder: 'Search colleges...',
+    approvable: true,
+    columns: [
+      { header: 'College', cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
+      { header: 'City', cell: (r) => r.city ?? '—' },
+    ],
+    fields: [
+      { name: 'name', label: 'College name', type: 'text', required: true },
+      { name: 'city', label: 'City', type: 'text' },
+      { name: 'isActive', label: 'Active (approved & shown in app)', type: 'checkbox' },
+    ],
   },
 
   'doc-types': {

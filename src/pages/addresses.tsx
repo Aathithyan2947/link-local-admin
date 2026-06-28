@@ -8,6 +8,7 @@ import { Badge, Card, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Field } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DataTable, type Column } from '@/components/ui/data-table';
 
 export function AddressesPage() {
@@ -75,6 +76,18 @@ const STATUS_TONE: Record<MasterRow['status'], 'success' | 'warning' | 'danger'>
   rejected: 'danger',
 };
 
+// Every field in the admin "Add locality" form is mandatory. The per-city Form Format only
+// governs the resident-facing address form in the app — it does NOT apply to this curated
+// master, where a complete locality record is always required.
+const REQUIRED_TEXT_FIELDS: { key: keyof MasterForm; label: string }[] = [
+  { key: 'complex', label: 'Complex / Building name' },
+  { key: 'lane1', label: 'Lane 1' },
+  { key: 'lane2', label: 'Lane 2' },
+  { key: 'area', label: 'Area' },
+  { key: 'suburb', label: 'Suburb' },
+  { key: 'pincode', label: 'Pincode' },
+];
+
 function MasterList() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -84,6 +97,7 @@ function MasterList() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<MasterForm>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<MasterRow | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data, isFetching, refetch } = useQuery({
@@ -119,8 +133,8 @@ function MasterList() {
         area: payload.area || undefined,
         suburb: payload.suburb || undefined,
         pincode: payload.pincode || undefined,
-        latitude: payload.latitude ? Number(payload.latitude) : undefined,
-        longitude: payload.longitude ? Number(payload.longitude) : undefined,
+        latitude: Number(payload.latitude),
+        longitude: Number(payload.longitude),
       };
       return payload.id
         ? api.patch(`/addresses/admin/master/${payload.id}`, body)
@@ -181,6 +195,33 @@ function MasterList() {
       setFormError('City is required');
       return;
     }
+    // Every locality field is required in the admin form.
+    for (const { key, label } of REQUIRED_TEXT_FIELDS) {
+      const val = form[key];
+      if (!val || !String(val).trim()) {
+        setFormError(`${label} is required`);
+        return;
+      }
+    }
+    // Latitude / Longitude are always mandatory and must be valid coordinates.
+    if (!form.latitude?.trim()) {
+      setFormError('Latitude is required');
+      return;
+    }
+    const lat = Number(form.latitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      setFormError('Latitude must be a number between -90 and 90');
+      return;
+    }
+    if (!form.longitude?.trim()) {
+      setFormError('Longitude is required');
+      return;
+    }
+    const lng = Number(form.longitude);
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      setFormError('Longitude must be a number between -180 and 180');
+      return;
+    }
     setFormError(null);
     save.mutate(form);
   }
@@ -209,7 +250,7 @@ function MasterList() {
           )}
           {r.status !== 'rejected' && (
             <button
-              onClick={() => review.mutate({ id: r.id, status: 'rejected' })}
+              onClick={() => setRejectTarget(r)}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-red-600"
               title="Reject"
             >
@@ -270,7 +311,7 @@ function MasterList() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={`${form.id ? 'Edit' : 'Add'} locality`}>
         <form onSubmit={submit} className="space-y-4">
-          <Field label="City">
+          <Field label="City" required>
             <Select
               value={form.cityId ?? ''}
               onChange={(e) => setForm((s) => ({ ...s, cityId: Number(e.target.value) }))}
@@ -282,19 +323,19 @@ function MasterList() {
               ))}
             </Select>
           </Field>
-          <Field label="Complex / Building name">
+          <Field label="Complex / Building name" required>
             <Input value={form.complex ?? ''} onChange={(e) => setForm((s) => ({ ...s, complex: e.target.value }))} placeholder="e.g. Sudarshan Sky Garden" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Lane 1"><Input value={form.lane1 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane1: e.target.value }))} /></Field>
-            <Field label="Lane 2"><Input value={form.lane2 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane2: e.target.value }))} /></Field>
-            <Field label="Area"><Input value={form.area ?? ''} onChange={(e) => setForm((s) => ({ ...s, area: e.target.value }))} /></Field>
-            <Field label="Suburb"><Input value={form.suburb ?? ''} onChange={(e) => setForm((s) => ({ ...s, suburb: e.target.value }))} /></Field>
-            <Field label="Pincode"><Input value={form.pincode ?? ''} onChange={(e) => setForm((s) => ({ ...s, pincode: e.target.value }))} /></Field>
+            <Field label="Lane 1" required><Input value={form.lane1 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane1: e.target.value }))} /></Field>
+            <Field label="Lane 2" required><Input value={form.lane2 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane2: e.target.value }))} /></Field>
+            <Field label="Area" required><Input value={form.area ?? ''} onChange={(e) => setForm((s) => ({ ...s, area: e.target.value }))} /></Field>
+            <Field label="Suburb" required><Input value={form.suburb ?? ''} onChange={(e) => setForm((s) => ({ ...s, suburb: e.target.value }))} /></Field>
+            <Field label="Pincode" required><Input value={form.pincode ?? ''} onChange={(e) => setForm((s) => ({ ...s, pincode: e.target.value }))} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Latitude"><Input value={form.latitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, latitude: e.target.value }))} placeholder="e.g. 19.2700000" /></Field>
-            <Field label="Longitude"><Input value={form.longitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, longitude: e.target.value }))} placeholder="e.g. 72.9690000" /></Field>
+            <Field label="Latitude" required><Input value={form.latitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, latitude: e.target.value }))} placeholder="e.g. 19.2700000" /></Field>
+            <Field label="Longitude" required><Input value={form.longitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, longitude: e.target.value }))} placeholder="e.g. 72.9690000" /></Field>
           </div>
           <p className="text-xs text-gray-400">The complex/building name powers search autofill; latitude / longitude power the app's 2&nbsp;km nearby-autofill. Residents' flat / plot numbers are never stored here.</p>
           {formError && (
@@ -306,6 +347,32 @@ function MasterList() {
           </div>
         </form>
       </Modal>
+
+      {rejectTarget && (
+        <ConfirmDialog
+          open
+          destructive
+          title="Reject locality"
+          confirmLabel="Reject"
+          loading={review.isPending}
+          message={
+            <>
+              Reject{' '}
+              <span className="font-semibold text-gray-900">
+                “{rejectTarget.complex || rejectTarget.area || rejectTarget.lane2 || rejectTarget.lane1 || rejectTarget.suburb || rejectTarget.city}”
+              </span>
+              ? It will no longer be suggested to users in the app.
+            </>
+          }
+          onConfirm={() =>
+            review.mutate(
+              { id: rejectTarget.id, status: 'rejected' },
+              { onSettled: () => setRejectTarget(null) },
+            )
+          }
+          onClose={() => setRejectTarget(null)}
+        />
+      )}
     </div>
   );
 }
