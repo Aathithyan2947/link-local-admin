@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
-const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file'];
+const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file', 'menu'];
 
 const list = (endpoint: string, params: Record<string, unknown>) =>
   api.get<ApiResponse<Row[]>>(endpoint, { params: { pageSize: 100, ...params } }).then((r) => r.data.data);
@@ -56,8 +56,9 @@ export function ServiceCategoriesPage() {
   const [subErr, setSubErr] = useState<string | null>(null);
   const saveSub = useMutation({
     mutationFn: (f: Row) => {
-      const body = { categoryId: selectedId, name: f.name, isActive: f.isActive ?? true };
-      return f.id ? api.patch(`/masters/service-subcategories/${f.id}`, { name: f.name, isActive: f.isActive }) : api.post('/masters/service-subcategories', body);
+      const type = f.type || null;
+      const body = { categoryId: selectedId, name: f.name, type, isActive: f.isActive ?? true };
+      return f.id ? api.patch(`/masters/service-subcategories/${f.id}`, { name: f.name, type, isActive: f.isActive }) : api.post('/masters/service-subcategories', body);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['svc-subs', selectedId] }); qc.invalidateQueries({ queryKey: ['svc-cats'] }); setSubModal(false); },
     onError: (e) => setSubErr(apiError(e)),
@@ -80,8 +81,8 @@ export function ServiceCategoriesPage() {
 
   const openCatCreate = () => { setCatForm({ isActive: true }); setCatErr(null); setCatModal(true); };
   const openCatEdit = (c: Row) => { setCatForm({ id: c.id, name: c.name, isActive: c.isActive }); setCatErr(null); setCatModal(true); };
-  const openSubCreate = () => { setSubForm({ isActive: true }); setSubErr(null); setSubModal(true); };
-  const openSubEdit = (s: Row) => { setSubForm({ id: s.id, name: s.name, isActive: s.isActive }); setSubErr(null); setSubModal(true); };
+  const openSubCreate = () => { setSubForm({ isActive: true, type: '' }); setSubErr(null); setSubModal(true); };
+  const openSubEdit = (s: Row) => { setSubForm({ id: s.id, name: s.name, type: s.type ?? '', isActive: s.isActive }); setSubErr(null); setSubModal(true); };
 
   return (
     <div>
@@ -139,6 +140,7 @@ export function ServiceCategoriesPage() {
                     <thead>
                       <tr className="border-b border-gray-100 bg-gray-50/60 text-xs uppercase tracking-wide text-gray-500">
                         <th className="px-4 py-2.5 text-left font-semibold">Sub-category</th>
+                        <th className="px-4 py-2.5 text-left font-semibold">Feature type</th>
                         <th className="px-4 py-2.5 text-left font-semibold">Status</th>
                         <th className="px-4 py-2.5 text-right font-semibold">Onboarding fields</th>
                         <th className="px-4 py-2.5" />
@@ -148,6 +150,11 @@ export function ServiceCategoriesPage() {
                       {(subs.data ?? []).map((s) => (
                         <tr key={s.id} className="border-b border-gray-50 last:border-0">
                           <td className="px-4 py-2 font-medium text-gray-900">{s.name}</td>
+                          <td className="px-4 py-2">
+                            {s.type === 'menu' && <Badge tone="success">Menu</Badge>}
+                            {s.type === 'date' && <Badge tone="warning">Date</Badge>}
+                            {!s.type && <span className="text-xs text-gray-400">—</span>}
+                          </td>
                           <td className="px-4 py-2">{s.isActive === false ? <Badge>Inactive</Badge> : <Badge tone="success">Active</Badge>}</td>
                           <td className="px-4 py-2 text-right">
                             <Button size="sm" variant="outline" onClick={() => setFieldsFor(s)}>
@@ -191,6 +198,13 @@ export function ServiceCategoriesPage() {
       <Modal open={subModal} onClose={() => setSubModal(false)} title={`${subForm.id ? 'Edit' : 'Add'} sub-category`}>
         <form onSubmit={(e) => { e.preventDefault(); saveSub.mutate(subForm); }} className="space-y-4">
           <Field label="Sub-category name"><Input value={subForm.name ?? ''} required onChange={(e) => setSubForm((s) => ({ ...s, name: e.target.value }))} /></Field>
+          <Field label="Feature type">
+            <Select value={subForm.type ?? ''} onChange={(e) => setSubForm((s) => ({ ...s, type: e.target.value }))} className="w-full">
+              <option value="">None — profile + charges only</option>
+              <option value="menu">Menu — SP can add products; residents use cart</option>
+              <option value="date">Date — SP can set availability; residents book slots</option>
+            </Select>
+          </Field>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <input type="checkbox" checked={subForm.isActive ?? true} onChange={(e) => setSubForm((s) => ({ ...s, isActive: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-500" /> Active
           </label>
