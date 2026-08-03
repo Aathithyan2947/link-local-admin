@@ -12,7 +12,17 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
-const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file', 'menu'];
+const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file', 'image', 'menu', 'pincode'];
+
+const CATEGORY_OPTIONS = [
+  { value: 'basic_details', label: 'Basic Details' },
+  { value: 'travel', label: 'Travel' },
+  { value: 'payment', label: 'Payment' },
+  { value: 'service_type', label: 'Service Type' },
+  { value: 'delivery', label: 'Delivery' },
+] as const;
+const fieldCategoryLabel = (v?: string) => CATEGORY_OPTIONS.find((c) => c.value === v)?.label ?? v ?? '—';
+const optionsOf = (raw?: string | null) => (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 const list = (endpoint: string, params: Record<string, unknown>) =>
   api.get<ApiResponse<Row[]>>(endpoint, { params: { pageSize: 100, ...params } }).then((r) => r.data.data);
@@ -251,7 +261,7 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
   const key = ['subcat-fields', subId];
   const fields = useQuery({ queryKey: key, queryFn: () => list('/masters/subcategory-fields', { subcategoryId: subId }) });
 
-  const [form, setForm] = useState<Row>({ fieldType: 'text', isRequired: false });
+  const [form, setForm] = useState<Row>({ fieldType: 'text', isRequired: false, category: 'basic_details' });
   const [err, setErr] = useState<string | null>(null);
 
   // ── Prefill: copy fields from another sub-category ──
@@ -281,15 +291,18 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
         subcategoryId: subId,
         fieldName: f.fieldName,
         fieldType: f.fieldType || 'text',
+        category: f.category || 'basic_details',
         isRequired: f.isRequired ?? false,
         sortOrder: f.sortOrder ? Number(f.sortOrder) : 0,
+        dependsOnFieldId: f.dependsOnFieldId ?? null,
+        dependsOnValue: f.dependsOnFieldId ? (f.dependsOnValue ?? null) : null,
       };
       if (f.fieldType === 'dropdown' && f.fieldOptions) body.fieldOptions = f.fieldOptions;
       return f.id
-        ? api.patch(`/masters/subcategory-fields/${f.id}`, { fieldName: body.fieldName, fieldType: body.fieldType, isRequired: body.isRequired, sortOrder: body.sortOrder, fieldOptions: body.fieldOptions })
+        ? api.patch(`/masters/subcategory-fields/${f.id}`, { fieldName: body.fieldName, fieldType: body.fieldType, category: body.category, isRequired: body.isRequired, sortOrder: body.sortOrder, fieldOptions: body.fieldOptions, dependsOnFieldId: body.dependsOnFieldId, dependsOnValue: body.dependsOnValue })
         : api.post('/masters/subcategory-fields', body);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: key }); setForm({ fieldType: 'text', isRequired: false }); setErr(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: key }); setForm({ fieldType: 'text', isRequired: false, category: 'basic_details' }); setErr(null); },
     onError: (e) => setErr(apiError(e)),
   });
   const del = useMutation({
@@ -335,9 +348,10 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
               {(fields.data ?? []).map((f) => (
                 <tr key={f.id} className="border-b border-gray-50 last:border-0">
                   <td className="px-3 py-2 font-medium text-gray-800">{f.fieldName}</td>
+                  <td className="px-3 py-2"><Badge>{fieldCategoryLabel(f.category)}</Badge></td>
                   <td className="px-3 py-2 text-gray-500">{f.fieldType}{f.isRequired ? ' • required' : ''}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => setForm({ id: f.id, fieldName: f.fieldName, fieldType: f.fieldType, fieldOptions: f.fieldOptions, isRequired: f.isRequired, sortOrder: f.sortOrder })} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => setForm({ id: f.id, fieldName: f.fieldName, fieldType: f.fieldType, fieldOptions: f.fieldOptions, category: f.category, isRequired: f.isRequired, sortOrder: f.sortOrder, dependsOnFieldId: f.dependsOnFieldId, dependsOnValue: f.dependsOnValue })} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
                     <button onClick={() => setPendingFieldDelete(f)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
@@ -360,15 +374,50 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
         {form.fieldType === 'dropdown' && (
           <Field label="Options (comma-separated)"><Input value={form.fieldOptions ?? ''} placeholder="e.g. Small, Medium, Large" onChange={(e) => setForm((s) => ({ ...s, fieldOptions: e.target.value }))} /></Field>
         )}
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-            <input type="checkbox" checked={form.isRequired ?? false} onChange={(e) => setForm((s) => ({ ...s, isRequired: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-500" /> Required
-          </label>
-          <Field label="Sort order"><Input type="number" value={form.sortOrder ?? ''} onChange={(e) => setForm((s) => ({ ...s, sortOrder: e.target.value }))} className="w-24" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Category">
+            <Select value={form.category ?? 'basic_details'} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))} className="w-full">
+              {CATEGORY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </Select>
+          </Field>
+          <Field label="Sort order"><Input type="number" value={form.sortOrder ?? ''} onChange={(e) => setForm((s) => ({ ...s, sortOrder: e.target.value }))} /></Field>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Show only if">
+            <Select
+              value={form.dependsOnFieldId ?? ''}
+              onChange={(e) => setForm((s) => ({ ...s, dependsOnFieldId: e.target.value ? Number(e.target.value) : null, dependsOnValue: null }))}
+              className="w-full"
+            >
+              <option value="">Always shown</option>
+              {(fields.data ?? []).filter((f) => f.id !== form.id).map((f) => (
+                <option key={f.id} value={f.id}>{f.fieldName}</option>
+              ))}
+            </Select>
+          </Field>
+          {form.dependsOnFieldId && (() => {
+            const target = (fields.data ?? []).find((f) => f.id === form.dependsOnFieldId);
+            const opts = target?.fieldType === 'boolean' ? ['true', 'false'] : (target ? optionsOf(target.fieldOptions) : []);
+            return opts.length > 0 ? (
+              <Field label="...equals">
+                <Select value={form.dependsOnValue ?? ''} onChange={(e) => setForm((s) => ({ ...s, dependsOnValue: e.target.value }))} className="w-full">
+                  <option value="">Select</option>
+                  {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                </Select>
+              </Field>
+            ) : (
+              <Field label="...equals">
+                <Input value={form.dependsOnValue ?? ''} onChange={(e) => setForm((s) => ({ ...s, dependsOnValue: e.target.value }))} />
+              </Field>
+            );
+          })()}
+        </div>
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <input type="checkbox" checked={form.isRequired ?? false} onChange={(e) => setForm((s) => ({ ...s, isRequired: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-500" /> Required
+        </label>
         {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{err}</div>}
         <div className="flex justify-end gap-2">
-          {form.id && <Button type="button" variant="ghost" onClick={() => setForm({ fieldType: 'text', isRequired: false })}>Clear</Button>}
+          {form.id && <Button type="button" variant="ghost" onClick={() => setForm({ fieldType: 'text', isRequired: false, category: 'basic_details' })}>Clear</Button>}
           <Button type="submit" loading={save.isPending}>{form.id ? 'Save field' : 'Add field'}</Button>
         </div>
       </form>
