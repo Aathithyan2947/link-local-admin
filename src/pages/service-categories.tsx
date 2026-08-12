@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, SlidersHorizontal, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, SlidersHorizontal, ChevronRight, Eye } from 'lucide-react';
 import { api, apiError, type ApiResponse } from '@/lib/api';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Badge, Card, Spinner } from '@/components/ui/card';
@@ -8,11 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { OnboardingPreview } from '@/components/onboarding-preview';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
-const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file', 'image', 'menu', 'pincode'];
+// 'menu' and 'booking' are feature markers rather than questions — they turn on the SP's
+// item catalogue / slot booking and render as a link into that editor. Put them under
+// Service Type. 'date' is an ordinary date question.
+const FIELD_TYPES = ['text', 'number', 'date', 'dropdown', 'boolean', 'file', 'image', 'menu', 'booking', 'pincode'];
 
 const CATEGORY_OPTIONS = [
   { value: 'basic_details', label: 'Basic Details' },
@@ -23,6 +27,15 @@ const CATEGORY_OPTIONS = [
 ] as const;
 const fieldCategoryLabel = (v?: string) => CATEGORY_OPTIONS.find((c) => c.value === v)?.label ?? v ?? '—';
 const optionsOf = (raw?: string | null) => (raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/** Fields in the order a service provider meets them: by step, then by sortOrder. */
+const orderedFields = (rows: Row[]) =>
+  [...rows].sort((a, b) => {
+    const ca = CATEGORY_OPTIONS.findIndex((c) => c.value === a.category);
+    const cb = CATEGORY_OPTIONS.findIndex((c) => c.value === b.category);
+    if (ca !== cb) return ca - cb;
+    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  });
 
 const list = (endpoint: string, params: Record<string, unknown>) =>
   api.get<ApiResponse<Row[]>>(endpoint, { params: { pageSize: 100, ...params } }).then((r) => r.data.data);
@@ -91,8 +104,8 @@ export function ServiceCategoriesPage() {
 
   const openCatCreate = () => { setCatForm({ isActive: true }); setCatErr(null); setCatModal(true); };
   const openCatEdit = (c: Row) => { setCatForm({ id: c.id, name: c.name, isActive: c.isActive }); setCatErr(null); setCatModal(true); };
-  const openSubCreate = () => { setSubForm({ isActive: true, type: '' }); setSubErr(null); setSubModal(true); };
-  const openSubEdit = (s: Row) => { setSubForm({ id: s.id, name: s.name, type: s.type ?? '', isActive: s.isActive }); setSubErr(null); setSubModal(true); };
+  const openSubCreate = () => { setSubForm({ isActive: true }); setSubErr(null); setSubModal(true); };
+  const openSubEdit = (s: Row) => { setSubForm({ id: s.id, name: s.name, isActive: s.isActive }); setSubErr(null); setSubModal(true); };
 
   return (
     <div>
@@ -161,9 +174,9 @@ export function ServiceCategoriesPage() {
                         <tr key={s.id} className="border-b border-gray-50 last:border-0">
                           <td className="px-4 py-2 font-medium text-gray-900">{s.name}</td>
                           <td className="px-4 py-2">
-                            {s.type === 'menu' && <Badge tone="success">Menu</Badge>}
-                            {s.type === 'date' && <Badge tone="warning">Date</Badge>}
-                            {!s.type && <span className="text-xs text-gray-400">—</span>}
+                            {s.fields?.some((f: Row) => f.fieldType === 'menu') && <Badge tone="success">Menu</Badge>}
+                            {s.fields?.some((f: Row) => f.fieldType === 'booking') && <Badge tone="warning">Booking</Badge>}
+                            {!s.fields?.length && <span className="text-xs text-gray-400">—</span>}
                           </td>
                           <td className="px-4 py-2">{s.isActive === false ? <Badge>Inactive</Badge> : <Badge tone="success">Active</Badge>}</td>
                           <td className="px-4 py-2 text-right">
@@ -208,13 +221,11 @@ export function ServiceCategoriesPage() {
       <Modal open={subModal} onClose={() => setSubModal(false)} title={`${subForm.id ? 'Edit' : 'Add'} sub-category`}>
         <form onSubmit={(e) => { e.preventDefault(); saveSub.mutate(subForm); }} className="space-y-4">
           <Field label="Sub-category name"><Input value={subForm.name ?? ''} required onChange={(e) => setSubForm((s) => ({ ...s, name: e.target.value }))} /></Field>
-          <Field label="Feature type">
-            <Select value={subForm.type ?? ''} onChange={(e) => setSubForm((s) => ({ ...s, type: e.target.value }))} className="w-full">
-              <option value="">None — profile + charges only</option>
-              <option value="menu">Menu — SP can add products; residents use cart</option>
-              <option value="date">Date — SP can set availability; residents book slots</option>
-            </Select>
-          </Field>
+          <p className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+            Menu and booking are set up in <strong>Fields</strong> now — add a field of type
+            <code className="mx-1">menu</code> or <code>booking</code> under Service Type, so a
+            sub-category's whole onboarding lives in one place.
+          </p>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <input type="checkbox" checked={subForm.isActive ?? true} onChange={(e) => setSubForm((s) => ({ ...s, isActive: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-brand-500" /> Active
           </label>
@@ -260,6 +271,14 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
   const subId = subcategory.id;
   const key = ['subcat-fields', subId];
   const fields = useQuery({ queryKey: key, queryFn: () => list('/masters/subcategory-fields', { subcategoryId: subId }) });
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const reorder = useMutation({
+    mutationFn: (ordered: Row[]) =>
+      api.patch('/masters/subcategory-fields/reorder', {
+        items: ordered.map((f, i) => ({ id: f.id, sortOrder: i })),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+  });
 
   const [form, setForm] = useState<Row>({ fieldType: 'text', isRequired: false, category: 'basic_details' });
   const [err, setErr] = useState<string | null>(null);
@@ -345,9 +364,19 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
         <div className="mb-4 max-h-56 overflow-auto rounded-xl border border-gray-100">
           <table className="w-full text-sm">
             <tbody>
-              {(fields.data ?? []).map((f) => (
+              {/* Grouped by step, then sort order — the order a service provider actually sees,
+                  and what the preview's drag-and-drop writes. A flat sortOrder list interleaved
+                  the categories, so the table never matched the app. */}
+              {orderedFields(fields.data ?? []).map((f, i, all) => (
                 <tr key={f.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-3 py-2 font-medium text-gray-800">{f.fieldName}</td>
+                  <td className="px-3 py-2 font-medium text-gray-800">
+                    {all[i - 1]?.category !== f.category && (
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        {fieldCategoryLabel(f.category)}
+                      </span>
+                    )}
+                    {f.fieldName}
+                  </td>
                   <td className="px-3 py-2"><Badge>{fieldCategoryLabel(f.category)}</Badge></td>
                   <td className="px-3 py-2 text-gray-500">{f.fieldType}{f.isRequired ? ' • required' : ''}</td>
                   <td className="px-3 py-2 text-right">
@@ -418,9 +447,24 @@ function FieldsModal({ subcategory, onClose }: { subcategory: Row; onClose: () =
         {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{err}</div>}
         <div className="flex justify-end gap-2">
           {form.id && <Button type="button" variant="ghost" onClick={() => setForm({ fieldType: 'text', isRequired: false, category: 'basic_details' })}>Clear</Button>}
+          <Button type="button" variant="outline" onClick={() => setPreviewOpen(true)}>
+            <Eye className="h-4 w-4" /> Preview
+          </Button>
           <Button type="submit" loading={save.isPending}>{form.id ? 'Save field' : 'Add field'}</Button>
         </div>
       </form>
+
+      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={`Preview — ${subcategory.name}`}>
+        <p className="mb-4 text-sm text-gray-500">
+          How a service provider fills this in on their phone. Steps, order and conditional
+          fields all come from what's configured here.
+        </p>
+        <OnboardingPreview
+          fields={fields.data ?? []}
+          onReorder={(ordered) => reorder.mutate(ordered)}
+          saving={reorder.isPending}
+        />
+      </Modal>
 
       {pendingFieldDelete && (
         <ConfirmDialog
