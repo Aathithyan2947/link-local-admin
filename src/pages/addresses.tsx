@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Upload, SlidersHorizontal, ArrowUp, ArrowDown, Trash2, Plus, Check, X, Pencil } from 'lucide-react';
 import { api, apiError, type ApiResponse, type PaginationMeta } from '@/lib/api';
+import { LOCALITY_LIMITS, localityError, normalizeLocality, pincodeError } from '@/lib/locality-rules';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/layout/app-layout';
 import { Badge, Card, Spinner } from '@/components/ui/card';
@@ -79,14 +80,21 @@ const STATUS_TONE: Record<MasterRow['status'], 'success' | 'warning' | 'danger'>
 // Every field in the admin "Add locality" form is mandatory. The per-city Form Format only
 // governs the resident-facing address form in the app — it does NOT apply to this curated
 // master, where a complete locality record is always required.
-const REQUIRED_TEXT_FIELDS: { key: keyof MasterForm; label: string }[] = [
-  { key: 'complex', label: 'Complex / Building name' },
-  { key: 'lane1', label: 'Lane 1' },
-  { key: 'lane2', label: 'Lane 2' },
-  { key: 'area', label: 'Area' },
-  { key: 'suburb', label: 'Suburb' },
-  { key: 'pincode', label: 'Pincode' },
+const REQUIRED_TEXT_FIELDS: { key: keyof MasterForm; label: string; max: number }[] = [
+  { key: 'complex', label: 'Complex / Building name', max: LOCALITY_LIMITS.complex },
+  { key: 'lane1', label: 'Lane 1', max: LOCALITY_LIMITS.text },
+  { key: 'lane2', label: 'Lane 2', max: LOCALITY_LIMITS.text },
+  { key: 'area', label: 'Area', max: LOCALITY_LIMITS.text },
+  { key: 'suburb', label: 'Suburb', max: LOCALITY_LIMITS.text },
 ];
+
+/** Each locality field's problem (or null), by the same rules the backend applies. */
+function fieldErrors(form: MasterForm): Partial<Record<keyof MasterForm, string | null>> {
+  const out: Partial<Record<keyof MasterForm, string | null>> = {};
+  for (const { key, label, max } of REQUIRED_TEXT_FIELDS) out[key] = localityError(label, form[key] as string, max);
+  out.pincode = pincodeError(form.pincode);
+  return out;
+}
 
 function MasterList() {
   const qc = useQueryClient();
@@ -97,6 +105,8 @@ function MasterList() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<MasterForm>({});
   const [formError, setFormError] = useState<string | null>(null);
+  // Field errors show once a field has content, or for every field after a Save attempt.
+  const [triedSave, setTriedSave] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<MasterRow | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -125,14 +135,15 @@ function MasterList() {
 
   const save = useMutation({
     mutationFn: (payload: MasterForm) => {
+      const tidy = (v?: string) => (v ? normalizeLocality(v) : undefined) || undefined;
       const body = {
         cityId: payload.cityId,
-        complex: payload.complex || undefined,
-        lane1: payload.lane1 || undefined,
-        lane2: payload.lane2 || undefined,
-        area: payload.area || undefined,
-        suburb: payload.suburb || undefined,
-        pincode: payload.pincode || undefined,
+        complex: tidy(payload.complex),
+        lane1: tidy(payload.lane1),
+        lane2: tidy(payload.lane2),
+        area: tidy(payload.area),
+        suburb: tidy(payload.suburb),
+        pincode: payload.pincode?.replace(/\s/g, '') || undefined,
         latitude: Number(payload.latitude),
         longitude: Number(payload.longitude),
       };
@@ -171,6 +182,7 @@ function MasterList() {
   function openCreate() {
     setForm({ cityId: cities?.[0]?.id });
     setFormError(null);
+    setTriedSave(false);
     setModalOpen(true);
   }
   function openEdit(r: MasterRow) {
@@ -187,21 +199,25 @@ function MasterList() {
       longitude: r.longitude != null ? String(r.longitude) : '',
     });
     setFormError(null);
+    setTriedSave(false);
     setModalOpen(true);
   }
+  const errors = fieldErrors(form);
+  /** A field's problem, once it has content or after a Save attempt — not while still empty. */
+  const shownError = (key: keyof MasterForm) => (triedSave || form[key] ? (errors[key] ?? null) : null);
+
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!form.cityId) {
       setFormError('City is required');
       return;
     }
-    // Every locality field is required in the admin form.
-    for (const { key, label } of REQUIRED_TEXT_FIELDS) {
-      const val = form[key];
-      if (!val || !String(val).trim()) {
-        setFormError(`${label} is required`);
-        return;
-      }
+    // Every locality field is required, and held to the shared length/character rules;
+    // the fields themselves show what's wrong.
+    setTriedSave(true);
+    if (Object.values(fieldErrors(form)).some(Boolean)) {
+      setFormError('Fix the highlighted fields to save this locality.');
+      return;
     }
     // Latitude / Longitude are always mandatory and must be valid coordinates.
     if (!form.latitude?.trim()) {
@@ -323,15 +339,15 @@ function MasterList() {
               ))}
             </Select>
           </Field>
-          <Field label="Complex / Building name" required>
-            <Input value={form.complex ?? ''} onChange={(e) => setForm((s) => ({ ...s, complex: e.target.value }))} placeholder="e.g. Sudarshan Sky Garden" />
+          <Field label="Complex / Building name" required error={shownError('complex')}>
+            <Input value={form.complex ?? ''} maxLength={LOCALITY_LIMITS.complex} onChange={(e) => setForm((s) => ({ ...s, complex: e.target.value }))} placeholder="e.g. Sudarshan Sky Garden" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Lane 1" required><Input value={form.lane1 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane1: e.target.value }))} /></Field>
-            <Field label="Lane 2" required><Input value={form.lane2 ?? ''} onChange={(e) => setForm((s) => ({ ...s, lane2: e.target.value }))} /></Field>
-            <Field label="Area" required><Input value={form.area ?? ''} onChange={(e) => setForm((s) => ({ ...s, area: e.target.value }))} /></Field>
-            <Field label="Suburb" required><Input value={form.suburb ?? ''} onChange={(e) => setForm((s) => ({ ...s, suburb: e.target.value }))} /></Field>
-            <Field label="Pincode" required><Input value={form.pincode ?? ''} onChange={(e) => setForm((s) => ({ ...s, pincode: e.target.value }))} /></Field>
+            <Field label="Lane 1" required error={shownError('lane1')}><Input value={form.lane1 ?? ''} maxLength={LOCALITY_LIMITS.text} onChange={(e) => setForm((s) => ({ ...s, lane1: e.target.value }))} /></Field>
+            <Field label="Lane 2" required error={shownError('lane2')}><Input value={form.lane2 ?? ''} maxLength={LOCALITY_LIMITS.text} onChange={(e) => setForm((s) => ({ ...s, lane2: e.target.value }))} /></Field>
+            <Field label="Area" required error={shownError('area')}><Input value={form.area ?? ''} maxLength={LOCALITY_LIMITS.text} onChange={(e) => setForm((s) => ({ ...s, area: e.target.value }))} /></Field>
+            <Field label="Suburb" required error={shownError('suburb')}><Input value={form.suburb ?? ''} maxLength={LOCALITY_LIMITS.text} onChange={(e) => setForm((s) => ({ ...s, suburb: e.target.value }))} /></Field>
+            <Field label="Pincode" required error={shownError('pincode')}><Input value={form.pincode ?? ''} inputMode="numeric" maxLength={6} onChange={(e) => setForm((s) => ({ ...s, pincode: e.target.value.replace(/\D/g, '') }))} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Latitude" required><Input value={form.latitude ?? ''} onChange={(e) => setForm((s) => ({ ...s, latitude: e.target.value }))} placeholder="e.g. 19.2700000" /></Field>
@@ -343,7 +359,14 @@ function MasterList() {
           )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button type="submit" loading={save.isPending}>{form.id ? 'Save changes' : 'Create'}</Button>
+            {/* Clickable at first so a Save attempt can reveal what's missing; then held until fixed. */}
+            <Button
+              type="submit"
+              loading={save.isPending}
+              disabled={triedSave && Object.values(errors).some(Boolean)}
+            >
+              {form.id ? 'Save changes' : 'Create'}
+            </Button>
           </div>
         </form>
       </Modal>

@@ -56,11 +56,24 @@ export const masterConfigs: Record<string, MasterCrudConfig> = {
     columns: [
       { header: 'Name', cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
       { header: 'State', cell: (r) => r.state ?? '—' },
+      {
+        header: 'Service area',
+        // Without an area, addresses in this city can only be checked by name.
+        cell: (r) =>
+          r.centerLat != null && r.centerLng != null && r.radiusKm != null ? (
+            `${Number(r.radiusKm)} km around ${Number(r.centerLat).toFixed(4)}, ${Number(r.centerLng).toFixed(4)}`
+          ) : (
+            <Badge tone="warning">No service area set</Badge>
+          ),
+      },
       { header: 'Status', cell: activeCell },
     ],
     fields: [
       { name: 'name', label: 'City name', type: 'text', required: true },
       { name: 'state', label: 'State', type: 'select', options: INDIAN_STATES },
+      { name: 'centerLat', label: 'Service area centre — latitude', type: 'number', step: 'any' },
+      { name: 'centerLng', label: 'Service area centre — longitude', type: 'number', step: 'any' },
+      { name: 'radiusKm', label: 'Service area radius (km)', type: 'number', step: 'any' },
       { name: 'isActive', label: 'Active', type: 'checkbox' },
     ],
   },

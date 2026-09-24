@@ -88,7 +88,11 @@ export interface ApiResponse<T> {
 /** Extracts a human message from an axios error. */
 export function apiError(err: unknown): string {
   if (axios.isAxiosError(err)) {
-    return (err.response?.data as { message?: string })?.message ?? err.message;
+    const data = err.response?.data as { message?: string; details?: Record<string, string[] | undefined> } | undefined;
+    // Prefer the first field-level reason ("Suburb must be at most 100 characters") over a
+    // generic "Validation failed".
+    const fieldMessage = data?.details && Object.values(data.details).find((v) => v?.length)?.[0];
+    return fieldMessage ?? data?.message ?? err.message;
   }
   return 'Unexpected error';
 }

@@ -26,6 +26,8 @@ export interface FieldConfig {
   /** Fetch select options from a master endpoint returning {id, ...}. */
   optionsEndpoint?: string;
   optionLabel?: (row: Row) => string;
+  /** Input step for number fields; defaults to whole numbers. Use 'any' for decimals. */
+  step?: string;
 }
 
 export interface MasterCrudConfig {
@@ -341,6 +343,7 @@ export function MasterCrudPage({ config }: { config: MasterCrudConfig }) {
                   ) : (
                     <Input
                       type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
+                      step={f.step}
                       value={form[f.name] ?? ''}
                       required={f.required}
                       onChange={(e) => setForm((s) => ({ ...s, [f.name]: e.target.value }))}

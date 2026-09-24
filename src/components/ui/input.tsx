@@ -30,10 +30,13 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
 export function Field({
   label,
   required,
+  error,
   children,
 }: {
   label: string;
   required?: boolean;
+  /** Shown under the input when set. */
+  error?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -43,6 +46,7 @@ export function Field({
         {required && <span className="text-red-500"> *</span>}
       </span>
       {children}
+      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
     </label>
   );
 }
